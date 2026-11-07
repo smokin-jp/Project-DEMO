@@ -28,6 +28,8 @@ import numpy as np
 from PIL import Image
 
 from .clip_model import Scorer
+from .extras import Extras, fighters_crop
+from .punch_gru import coco_keypoints, resample
 from .config import Settings, settings as default_settings
 from .geometry import LEGAL_SURFACE, GeoResult, analyze, build_person, normalise
 from .prompts import PROMPT_SETS
@@ -94,10 +96,38 @@ class ViewResult:
     clip: dict[str, Optional[dict[str, float]]] = field(default_factory=dict)
     dist: Optional[dict[str, Optional[dict[str, float]]]] = None  # this view's fused geometry x CLIP distributions
     quality: float = 0.05
+    trained_kick: Optional[dict] = None   # the trained kick detector's read of the frames around the impact (kicks only)
+    punch_type: Optional[dict] = None     # the trained punch-type model's label (punches only)
 
 
-def analyze_view(req: JudgeRequest, scorer: Scorer, cfg: Settings = default_settings) -> ViewResult:
-    """Geometry + CLIP for ONE camera's clip."""
+def _trained_models(vr: ViewResult, extras: Extras, req: JudgeRequest, frames, images, people, aspect: float, p: int) -> None:
+    """Run the optional trained models on this camera's clip. Any failure just leaves that feature out of the verdict."""
+    ev, strike = req.evidence, req.evidence.strike
+    target = "b" if ev.thrower == "a" else "a"
+    try:
+        if strike == "kick" and extras.kick is not None:
+            half = extras.kick_frames // 2
+            crops = []
+            for q in range(max(0, p - half), min(len(images), p + half + 1)):
+                if extras.kick_crop == "fighters":
+                    pts = [(pt[0] / aspect, pt[1]) for who in (people[q].get(ev.thrower), people[q].get(target)) if who for pt in who.pts.values()]
+                    crops.append(fighters_crop(images[q], pts))
+                else:
+                    crops.append(images[q])
+            vr.trained_kick = extras.kick.judge_frames(crops)
+        elif strike == "punch" and extras.punch is not None:
+            seq = resample([f.t_ms for f in frames], [coco_keypoints(f.poses.get(ev.thrower), aspect) for f in frames])
+            if seq is not None:
+                pics = [vr.crops["impact"]] if "impact" in vr.crops and extras.punch.embedder is not None else None
+                vr.punch_type = extras.punch.predict(seq, pics)
+    except Exception:  # noqa: BLE001 - a trained model must never break a judgement
+        import logging
+
+        logging.getLogger("referee").exception("trained model failed (ignored)")
+
+
+def analyze_view(req: JudgeRequest, scorer: Scorer, cfg: Settings = default_settings, extras: Optional[Extras] = None) -> ViewResult:
+    """Geometry + CLIP (+ the optional trained models) for ONE camera's clip."""
     ev = req.evidence
     strike = ev.strike
     prompts = PROMPT_SETS[strike]
@@ -152,6 +182,11 @@ def analyze_view(req: JudgeRequest, scorer: Scorer, cfg: Settings = default_sett
     vr.dist = {
         "check": fuse({"real": gp, "not_real": 1 - gp}, clip["check"], 0.6) if strike != "punch" else None,
     }
+    if extras is not None:
+        _trained_models(vr, extras, req, frames, images, people, aspect, p)
+        if vr.trained_kick and vr.trained_kick["mean"] is not None:  # the trained detector's vote joins the "is it really a kick" check
+            m = min(0.98, max(0.02, vr.trained_kick["mean"]))
+            vr.dist["check"] = fuse(vr.dist["check"], {"real": m, "not_real": 1 - m}, 1 - extras.w_kick)
     if geo.available:
         vr.dist["contact"] = fuse({"contact": geo.contact_p, "no_contact": 1 - geo.contact_p}, clip["contact"], w["contact"])
         vr.dist["location"] = fuse(geo.location_p, clip["location"], w["location"])
@@ -213,6 +248,11 @@ def decide(views: list[ViewResult], scorer_name: str, return_crops: bool, t0: fl
                                  detail={"p_real": round(f_chk["real"], 3), "geometry": round(float(np.mean(gps)) if gps else 0.5, 3),
                                          "clip": _r(first.clip.get("check")),
                                          "note": "kinematics (speed, leg lift) x CLIP kick-vs-step"})
+    tk = next((v.trained_kick for v in base_views if v.trained_kick), None)
+    if strike_check is not None and tk:
+        strike_check.detail["trained_kick"] = tk
+        strike_check.detail["note"] += " x trained kick detector (CLIP B/32 + logistic regression, smoothed over the frames around impact)"
+    punch_type = next((v.punch_type for v in base_views if v.punch_type), None)
     confirmed = strike_check is None or bool(strike_check.value)
 
     if not avail:
@@ -225,6 +265,7 @@ def decide(views: list[ViewResult], scorer_name: str, return_crops: bool, t0: fl
             scored=False, review=False, confidence=0.0,
             summary=f"{thrower_name} {ev.hand} {word}: no opponent in frame, nothing to score.",
             latency_ms=round((time.perf_counter() - t0) * 1000, 1), model=scorer_name, crops=thumbs(), views=summaries,
+            punch_type=punch_type,
         )
 
     # ---- fuse the per-view distributions (quality-weighted)
@@ -322,22 +363,23 @@ def decide(views: list[ViewResult], scorer_name: str, return_crops: bool, t0: fl
         thrower=q1, intended_target=q2, contact=q3, contact_location=q4, legal_area=q5, legal_glove_part=q6, genuine_punch=q7,
         scored=scored, review=review, confidence=round(float(overall), 3), foul=foul, summary=summary,
         latency_ms=round((time.perf_counter() - t0) * 1000, 1), model=scorer_name, crops=thumbs(), views=summaries,
+        punch_type=punch_type,
     )
 
 
-def judge(req: JudgeRequest, scorer: Scorer, cfg: Settings = default_settings) -> Verdict:
+def judge(req: JudgeRequest, scorer: Scorer, cfg: Settings = default_settings, extras: Optional[Extras] = None) -> Verdict:
     """Single-camera judgement (the one-view case)."""
     t0 = time.perf_counter()
-    view = analyze_view(req, scorer, cfg)
+    view = analyze_view(req, scorer, cfg, extras)
     return decide([view], getattr(scorer, "name", ""), req.return_crops, t0, cfg)
 
 
-def judge_multi(req: MultiJudgeRequest, scorer: Scorer, cfg: Settings = default_settings) -> Verdict:
+def judge_multi(req: MultiJudgeRequest, scorer: Scorer, cfg: Settings = default_settings, extras: Optional[Extras] = None) -> Verdict:
     """The same strike seen by several cameras: analyse each, fuse by view quality, decide once."""
     t0 = time.perf_counter()
     views = []
     for i, r in enumerate(req.views):
         if r.camera == "cam1" and i:  # keep labels unique if the client did not set them
             r = r.model_copy(update={"camera": f"cam{i + 1}"})
-        views.append(analyze_view(r, scorer, cfg))
+        views.append(analyze_view(r, scorer, cfg, extras))
     return decide(views, getattr(scorer, "name", ""), req.return_crops, t0, cfg)

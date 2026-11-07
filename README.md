@@ -33,7 +33,7 @@ Open http://localhost:5173 → choose your camera(s) → **Start camera(s)** (or
 
 Setup (once): `python -m venv backend/.venv && backend\.venv\Scripts\pip install -r backend/requirements.txt` (use the CPU torch index: `--index-url https://download.pytorch.org/whl/cpu`). Model: `CLIP_MODEL=openai/clip-vit-large-patch14` is more accurate but ~4× slower.
 
-Tests: `npm test` (108 Node tests: detectors, engine, rulesets, verdict handling, multi-camera logic, fighter identity, penalty audit, report, throw decisions) · `npm run test:backend` (34 tests: geometry, fusion, kicks/knees, multi-view, API, startup).
+Tests: `npm test` (108 Node tests: detectors, engine, rulesets, verdict handling, multi-camera logic, fighter identity, penalty audit, report, throw decisions) · `npm run test:backend` (52 tests: geometry, fusion, kicks/knees, multi-view, API, startup).
 
 ## The seven questions (backend/app/judge.py)
 
@@ -96,6 +96,14 @@ The pose-based rule only knows one throw (Osoto-gari, from the leg reap). A mode
 - **Scorecard:** after each round the scoreboard shows the 10-point-must card (boxing, kickboxing) with the strikes, knockdowns and deductions behind each score, and a running total.
 - **Replay:** every judged strike has **▶ Replay in slow motion**: the frames the judge looked at, all cameras side by side, the impact frame highlighted. Replays are kept in memory for this session (the newest 15 strikes); the stills and the seven answers are saved permanently.
 - **📄 Match report:** opens a printable page (Print / Save as PDF): result, per-fighter summary, scorecard, penalties, the full timeline (AI vs referee calls), and every strike judged in this bout with screenshots and the seven answers. All text is escaped, and it states that the human referee's decision is final.
+
+## Teammates' trained models (kick detector and punch type)
+
+Two models trained by the team are part of the backend now. They load automatically when their files exist, each is skipped if missing, and `/api/health` shows `kick_model` / `punch_model`.
+
+- **Kick detector** (`backend/models/kick_detector.joblib`, `app/kick_clf.py`): a CLIP **ViT-B/32** image embedding into a logistic regression with a tuned threshold (0.506), trained on a kick / no-kick image set. It is a **second opinion on "is this really a kick, not a step"**. For every kick candidate the 5 frames around the impact are cropped around the two fighters and scored, and the team's rolling window (`app/temporal_smoothing.py`: at least 3 of 5 frames) makes the call. Its probability is fused (weight 0.5, `KICK_MODEL_WEIGHT`) with the pose geometry and CLIP's zero-shot read, and shown in the review card ("Trained kick detector: 4 of 5 frames show a kick"). It needs ViT-B/32 while the main judge uses ViT-B/16, so the backend loads both (`app/b32_clip.py`; about 600 MB of extra weights, downloaded once by `transformers`; the original `clip` package is no longer needed). `python -m app.predict_kick <image>` still scores a single picture.
+- **Punch type** (`boxing_ai/checkpoints/skeleton_gru_normalized_velocity_best.pth`, `app/punch_gru.py`): a bidirectional GRU on 25 frames of the thrower's skeleton (17 COCO keypoints, hip-centred, torso-scaled, position + velocity) that names the punch: cross, jab, lead hook, lead uppercut, rear hook or rear uppercut. It is blended 80/20 with a CLIP B/32 zero-shot read of the impact crop when that model is available. Shown as "Punch type (experimental)" in the review card and report. **It is a label only and never changes the score.** The browser now also sends the eye keypoints the GRU needs.
+- **Honest accuracy:** the punch-type checkpoint's own validation macro-F1 is about **0.43** (held-out videos V1 / V4), so treat the label as a hint; the 80/20 blend was never calibrated. The datasets behind both models are **not in the repository** (only the trained files), so neither model could be measured here on real footage. They were checked for plausibility (judo frames without kicks mostly score below the kick threshold) and for correct wiring (tests with stand-in embedders plus live API calls). `boxing_ai/` is the teammate's original prototype and training scripts, left untouched; it needs the `clip` package and the BoxingVI data, which are not included.
 
 ## Finding both fighters (uploaded videos and clinches)
 

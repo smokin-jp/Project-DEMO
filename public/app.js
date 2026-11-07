@@ -616,6 +616,8 @@ function reviewHtml(r) {
     ['5 Legal scoring area?', yn(v.legal_area.value), tick(v.legal_area.value, v.legal_area.confidence)],
     [(v.strike || 'punch') === 'punch' ? '6 Legal glove part?' : '6 Legal striking surface?', `${yn(v.legal_glove_part.value)}${v.legal_glove_part.detail.part ? ' · ' + v.legal_glove_part.detail.part.replace(/_/g, ' ') : ''}`, tick(v.legal_glove_part.value, v.legal_glove_part.confidence)],
     ['7 Genuine punch?', `${yn(v.genuine_punch.value)} · ${v.genuine_punch.detail.classification ?? ''}`, tick(v.genuine_punch.value, v.genuine_punch.confidence)],
+    ...(v.strike_check?.detail?.trained_kick ? [['Trained kick detector', `${v.strike_check.detail.trained_kick.positive_frames} of ${v.strike_check.detail.trained_kick.frames_considered} frames show a kick`, `<span class="dim">${pct(v.strike_check.detail.trained_kick.mean)}</span>`]] : []),
+    ...(v.punch_type ? [['Punch type (experimental)', v.punch_type.label, `<span class="dim" title="${escapeHtml(v.punch_type.note || '')}">${pct(v.punch_type.confidence)}</span>`]] : []),
   ];
   const cls = v.foul ? 'foul' : v.scored ? 'scored' : v.review ? 'review' : 'none';
   const word = (v.strike || 'punch') === 'knee' ? 'KNEE' : (v.strike || 'punch').toUpperCase();

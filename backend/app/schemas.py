@@ -65,6 +65,8 @@ class Verdict(BaseModel):
     latency_ms: float = 0.0
     model: str = ""
     crops: dict[str, str] = Field(default_factory=dict)  # name -> base64 JPEG (what CLIP looked at); "cam2_impact" etc. with several cameras
+    # experimental punch TYPE from the trained skeleton GRU (+ CLIP B/32): {label, confidence, probs, source, note}; never affects scoring
+    punch_type: Optional[dict[str, Any]] = None
     # per-camera summary when several views were fused: [{camera, quality, available, p_contact, location, genuine}]
     views: list[dict[str, Any]] = Field(default_factory=list)
 

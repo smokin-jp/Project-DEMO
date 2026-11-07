@@ -27,6 +27,8 @@ function reviewHtml(r) {
     ['5 Legal scoring area?', yn(v.legal_area.value), v.legal_area.confidence],
     [kind === 'punch' ? '6 Legal glove part?' : '6 Legal striking surface?', `${yn(v.legal_glove_part.value)}${v.legal_glove_part.detail.part ? ' · ' + word(v.legal_glove_part.detail.part) : ''}`, v.legal_glove_part.confidence],
     ['7 Genuine strike?', `${yn(v.genuine_punch.value)} · ${v.genuine_punch.detail.classification ?? ''}`, v.genuine_punch.confidence],
+    ...(v.strike_check?.detail?.trained_kick ? [['Trained kick detector', `${v.strike_check.detail.trained_kick.positive_frames} of ${v.strike_check.detail.trained_kick.frames_considered} frames show a kick · ${v.strike_check.detail.trained_kick.detected ? 'kick' : 'no kick'}`, v.strike_check.detail.trained_kick.mean]] : []),
+    ...(v.punch_type ? [['Punch type (experimental)', v.punch_type.label, v.punch_type.confidence]] : []),
   ];
   const views = (v.views || []).length
     ? `<table class="t small"><tr><th colspan="3">Cameras (each view weighted by how well it sees the strike)</th></tr>${v.views.map((x) => `<tr><td>${esc(x.camera)}</td><td>${x.available ? 'sees both fighters' : 'cannot see the opponent'}</td><td>weight ${pct(x.quality)}${x.p_contact != null ? ` · contact ${pct(x.p_contact)} · ${esc(word(x.location))}` : ''}</td></tr>`).join('')}</table>${v.contact?.detail?.veto_by_good_view ? '<p class="note">A clear miss from a well-placed camera overruled an apparent hit from another angle.</p>' : ''}`

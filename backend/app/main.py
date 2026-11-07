@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .clip_model import ClipScorer, Scorer
 from .config import settings
+from .extras import Extras, load_extras
 from .judge import decode_jpeg, judge, judge_multi
 from .schemas import JudgeRequest, MultiJudgeRequest, ThrowTypeRequest, ThrowTypeResult, Verdict
 from .throw_clip import ThrowTypeModel
@@ -19,7 +20,7 @@ THROW_MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "throw_cl
 log = logging.getLogger("referee")
 
 
-def create_app(scorer: Scorer | None = None, throw_model: ThrowTypeModel | None = None) -> FastAPI:
+def create_app(scorer: Scorer | None = None, throw_model: ThrowTypeModel | None = None, extras: Extras | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         if scorer is None:
@@ -44,6 +45,8 @@ def create_app(scorer: Scorer | None = None, throw_model: ThrowTypeModel | None 
         if throw_model is None and scorer is None and THROW_MODEL_PATH.exists():
             app.state.throw_model = ThrowTypeModel.load(str(THROW_MODEL_PATH))
             log.warning("throw-type model loaded: %s", THROW_MODEL_PATH.name)
+        # the team's trained kick detector and punch-type model: loaded when their files exist (never in tests unless passed in)
+        app.state.extras = extras if extras is not None else (load_extras(settings.device) if scorer is None else Extras())
         yield
 
     app = FastAPI(title="AI Referee: punch judge", lifespan=lifespan)
@@ -53,12 +56,12 @@ def create_app(scorer: Scorer | None = None, throw_model: ThrowTypeModel | None 
     def health():
         s = app.state.scorer
         return {"ok": True, "model": getattr(s, "name", "?"), "device": settings.device, "loaded": getattr(s, "loaded", True),
-                "throw_model": app.state.throw_model is not None}
+                "throw_model": app.state.throw_model is not None, **app.state.extras.names}
 
     @app.post("/api/judge", response_model=Verdict)
     def judge_punch(req: JudgeRequest):
         try:
-            return judge(req, app.state.scorer)
+            return judge(req, app.state.scorer, extras=app.state.extras)
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
 
@@ -66,7 +69,7 @@ def create_app(scorer: Scorer | None = None, throw_model: ThrowTypeModel | None 
     def judge_strike_multi(req: MultiJudgeRequest):
         """The same strike seen by several cameras (clips share one clock): one fused verdict."""
         try:
-            return judge_multi(req, app.state.scorer)
+            return judge_multi(req, app.state.scorer, extras=app.state.extras)
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
 

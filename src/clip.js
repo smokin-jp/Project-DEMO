@@ -1,7 +1,7 @@
 // Browser side of the CLIP backend: a rolling frame buffer, clip capture around each candidate strike,
 // and the HTTP client. The pose tracker is the cheap trigger; the backend makes the call.
 
-const KEYPOINTS = [0, 7, 8, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+const KEYPOINTS = [0, 2, 5, 7, 8, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
 const PRE_MS = 500, POST_MS = 300, MAX_SEND = 16, WIDTH = 640;
 
 /** compact skeletons for the backend: {a: {idx: [x,y,v]}, b: ...}; x,y as image fractions */

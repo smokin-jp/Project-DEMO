@@ -7,3 +7,5 @@ pillow
 numpy
 pytest
 httpx
+scikit-learn
+joblib
