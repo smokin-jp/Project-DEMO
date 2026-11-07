@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Referee</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="whistle">🏁</span> AI REFEREE</div>
+  <nav id="sportTabs" aria-label="Sport preset"></nav>
+  <label class="variant">Rules <select id="variant"></select></label>
+  <div id="backend" class="pill badp" title="CLIP backend: click to change URL">CLIP backend…</div>
+  <div id="status" class="pill">Idle</div>
+</header>
+
+<main>
+  <section class="stage-col">
+    <div id="stage">
+      <canvas id="view" width="960" height="540"></canvas>
+      <div id="banner" class="banner" aria-live="assertive"></div>
+      <div id="hud"><span id="fps"></span><br><span id="idinfo"></span></div>
+    </div>
+    <div id="camThumbs" class="camthumbs" hidden></div>
+
+    <div class="controls">
+      <div class="group camgroup">
+        <span class="gl">Cameras: more angles = more accurate calls (each strike is judged from every camera)</span>
+        <div id="camRows"></div>
+        <div id="camInfo" class="caminfo"></div>
+        <div class="camactions">
+          <button id="btnDetect" title="Ask the browser for camera access so your cameras' real names appear">🔍 Detect cameras</button>
+          <button id="btnAddCam" title="Add another camera angle (up to 3)">+ Add camera angle</button>
+          <button id="btnCam" class="primary">📷 Start camera(s)</button>
+          <label class="btn" for="fileVideo">🎞 Video file…</label>
+          <input id="fileVideo" type="file" accept="video/*" hidden>
+          <select id="rate" title="Video playback speed">
+            <option value="1">1×</option><option value="0.5">0.5×</option><option value="0.25">0.25×</option>
+          </select>
+        </div>
+      </div>
+      <div class="group">
+        <span class="gl">Match</span>
+        <button id="btnStart" class="primary">Start</button>
+        <button id="btnPause">Break</button>
+        <button id="btnReset">Reset</button>
+        <button id="btnReport" title="Open a printable match report (result, scorecard, penalties, timeline, every judged strike with screenshots)">📄 Match report</button>
+      </div>
+      <div class="group opts">
+        <label><input type="checkbox" id="optVoice" checked> Voice</label>
+        <label title="With only one person in frame, score their punches against an imaginary opponent"><input type="checkbox" id="optSolo" checked> Solo / shadow-box</label>
+        <label><input type="checkbox" id="optSkel" checked> Skeleton</label>
+        <label title="When the pose model sees only one person, look again for the second fighter (hides the first, searches the rest of the picture). Finds both fighters far more often in clinches and uploaded videos, at some cost in speed."><input type="checkbox" id="optRecover" checked> Find 2nd fighter</label>
+        <label title="Learn each fighter's clothing colour so RED and BLUE stay the same person through clinches and across every camera. Works best when the two wear clearly different colours."><input type="checkbox" id="optColour" checked> Match fighters by clothing colour</label>
+      </div>
+    </div>
+  </section>
+
+  <aside>
+    <section id="board" class="card"></section>
+    <section id="verdict" class="card"></section>
+
+    <section class="card tabs-card">
+      <div class="tabs" id="tabs">
+        <button data-tab="log" class="on">Call log</button>
+        <button data-tab="manual">Referee override</button>
+        <button data-tab="rules">Rulebook</button>
+        <button data-tab="tune">Tuning</button>
+      </div>
+      <div id="tab-log" class="tabpane"><ol id="log"></ol></div>
+      <div id="tab-manual" class="tabpane" hidden></div>
+      <div id="tab-rules" class="tabpane" hidden></div>
+      <div id="tab-tune" class="tabpane" hidden></div>
+    </section>
+  </aside>
+</main>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

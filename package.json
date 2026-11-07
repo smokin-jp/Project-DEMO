@@ -1,0 +1,16 @@
+{
+  "name": "ref-ai",
+  "version": "1.0.0",
+  "description": "AI martial-arts referee: pose tracking in the browser, OpenAI CLIP punch judge on a Python backend",
+  "type": "module",
+  "scripts": {
+    "all": "node start-all.mjs",
+    "start": "node server.mjs",
+    "backend": ".\\backend\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --app-dir backend --port 8000",
+    "test": "node --test \"test/*.test.mjs\"",
+    "test:backend": "cd backend && .\\.venv\\Scripts\\python.exe -m pytest -q"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^1.2.2"
+  }
+}

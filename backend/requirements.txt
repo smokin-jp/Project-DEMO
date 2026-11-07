@@ -1,0 +1,9 @@
+torch
+transformers
+fastapi
+uvicorn[standard]
+python-multipart
+pillow
+numpy
+pytest
+httpx

@@ -1,0 +1,123 @@
+{
+  "classes": [
+    "ippon_seoi_nage",
+    "o_goshi",
+    "osoto_gari",
+    "uchi_mata"
+  ],
+  "clips": 801,
+  "sources": 676,
+  "baselines_official": {
+    "majority": {
+      "accuracy": 0.2178,
+      "macro_f1": 0.0894
+    },
+    "logreg_mean": {
+      "accuracy": 0.8812,
+      "macro_f1": 0.8833,
+      "C": 30,
+      "val_macro_f1": 0.8516
+    },
+    "logreg_frames": {
+      "accuracy": 0.9604,
+      "macro_f1": 0.9588,
+      "C": 30,
+      "val_macro_f1": 0.9216
+    }
+  },
+  "baselines_grouped": {
+    "majority": {
+      "accuracy": 0.2782,
+      "macro_f1": 0.1088
+    },
+    "logreg_mean": {
+      "accuracy": 0.7293,
+      "macro_f1": 0.7293,
+      "C": 30,
+      "val_macro_f1": 0.7415
+    },
+    "logreg_frames": {
+      "accuracy": 0.782,
+      "macro_f1": 0.7775,
+      "C": 30,
+      "val_macro_f1": 0.7564
+    }
+  },
+  "cv6_grouped_logreg_mean_accuracy": {
+    "mean": 0.6542,
+    "std": 0.0321,
+    "folds": [
+      0.617,
+      0.619,
+      0.679,
+      0.634,
+      0.677,
+      0.699
+    ]
+  },
+  "network_grouped_test": {
+    "accuracy": 0.8496,
+    "macro_f1": 0.8519,
+    "best_epoch": 86,
+    "val_macro_f1": 0.8957
+  },
+  "network_official_test_(optimistic)": {
+    "accuracy": 0.9505,
+    "macro_f1": 0.9522
+  },
+  "confidence": {
+    "mean_when_right": 0.851,
+    "mean_when_wrong": 0.591
+  },
+  "accuracy_when_confidence>=0.5": {
+    "accuracy": 0.886,
+    "share_of_clips": 0.925
+  },
+  "accuracy_when_confidence>=0.6": {
+    "accuracy": 0.929,
+    "share_of_clips": 0.85
+  },
+  "accuracy_when_confidence>=0.7": {
+    "accuracy": 0.951,
+    "share_of_clips": 0.767
+  },
+  "confusion_matrix": [
+    [
+      24,
+      0,
+      4,
+      4
+    ],
+    [
+      1,
+      26,
+      1,
+      1
+    ],
+    [
+      4,
+      0,
+      29,
+      2
+    ],
+    [
+      2,
+      0,
+      1,
+      34
+    ]
+  ],
+  "cv6_grouped_network": {
+    "accuracy_mean": 0.8353,
+    "accuracy_std": 0.0356,
+    "macro_f1_mean": 0.8352,
+    "folds": [
+      0.85,
+      0.843,
+      0.866,
+      0.761,
+      0.865,
+      0.827
+    ]
+  }
+}

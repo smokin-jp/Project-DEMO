@@ -1,0 +1,23 @@
+# dependencies (reinstall with `npm install` and the backend setup in README.md)
+node_modules/
+backend/.venv/
+
+# python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# local run output and test scratch files
+*.log
+public/_clips.json
+public/_mc.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# training (big, reinstallable or re-downloadable)
+training/.venv/
+training/data/
