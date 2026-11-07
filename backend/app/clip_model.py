@@ -90,7 +90,9 @@ class ClipScorer:
         """label -> probability, averaged over the embeddings feats[idx]."""
         if not idx:
             return {k: 1.0 / len(prompt_set) for k in prompt_set}
-        with self._lock:
+        import torch
+
+        with self._lock, torch.no_grad():  # grad mode is per thread; the API runs requests in worker threads
             labels, txt = self._text_feats(prompt_set)
             scale = self._model.logit_scale.exp()
             probs = (scale * feats[idx] @ txt.T).softmax(dim=-1).mean(0)

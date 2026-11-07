@@ -51,7 +51,7 @@
         <label><input type="checkbox" id="optVoice" checked> Voice</label>
         <label title="With only one person in frame, score their punches against an imaginary opponent"><input type="checkbox" id="optSolo" checked> Solo / shadow-box</label>
         <label><input type="checkbox" id="optSkel" checked> Skeleton</label>
-        <label title="When the pose model sees only one person, look again for the second fighter (hides the first, searches the rest of the picture). Finds both fighters far more often in clinches and uploaded videos, at some cost in speed."><input type="checkbox" id="optRecover" checked> Find 2nd fighter</label>
+        <label title="When the pose model sees only one person, look again for the second fighter (hides the first, searches the rest of the picture). Finds both fighters far more often in clinches and uploaded videos, at a cost of about 100 ms per frame: off by default for live cameras (punch detection needs 10+ frames per second), switched on automatically for uploaded videos, which then play slower to keep up."><input type="checkbox" id="optRecover"> Find 2nd fighter</label>
         <label title="Learn each fighter's clothing colour so RED and BLUE stay the same person through clinches and across every camera. Works best when the two wear clearly different colours."><input type="checkbox" id="optColour" checked> Match fighters by clothing colour</label>
       </div>
     </div>

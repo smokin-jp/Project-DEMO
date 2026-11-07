@@ -255,6 +255,11 @@ let setup = (() => {
 const saveSetup = () => { try { localStorage.setItem(CAM_STORE, JSON.stringify(setup)); } catch { /* ignore */ } };
 const clockNow = () => (mode === 'video' && cams[0] ? cams[0].lastMedia : performance.now()); // the clock the frames are stamped with
 
+let recoverTouched = false; // the user ticked / unticked 'Find 2nd fighter' themselves: stop applying the per-source default
+function setRecoverDefault(on) {
+  if (!recoverTouched) $('#optRecover').checked = on;
+}
+
 async function newPose() {
   const { createPose } = await import('/src/pose.js'); // each camera needs its own tracker instance
   return createPose((t) => ($('#status').textContent = t), { recover: $('#optRecover').checked });
@@ -401,6 +406,7 @@ async function startCameras() {
       made.push(cam); // so a failure below releases it
       try { await cam.open(setup[i].id); } catch (e) { e.camIndex = i; throw e; }
       if (made.some((o) => o !== cam && o.deviceId && o.deviceId === cam.deviceId)) throw Object.assign(new Error(`CAM ${i + 1} opened the same camera as another row. Pick a different camera.`), { name: 'Duplicate' });
+      setRecoverDefault(false); // live camera: the extra search costs ~100 ms a frame and punches need >= 10 frames a second
       cam.pose = await newPose();
     }
     cams = made;
@@ -451,6 +457,7 @@ async function startVideo(file) {
   const cam = new Camera(0, cfg);
   try {
     await cam.openFile(file, Number($('#rate').value));
+    setRecoverDefault(true); // uploaded video: find both fighters; playback slows down by itself to keep up (see adaptPlayback)
     cam.pose = await newPose();
     cams = [cam];
     primary = 0;
@@ -726,10 +733,24 @@ function updateBackendPill() {
   }
 }
 
+const MIN_FPS = 12; // below about 10 frames a second the punch detector starts missing punches (tested: 3 of 3 at 12 fps, about 1 of 3 at 8 fps)
+
+/** an uploaded video plays in real time, so a slow computer would skip frames; slow the playback down so about 15 video frames a second get analysed */
+function adaptPlayback() {
+  const userRate = Number($('#rate').value) || 1;
+  for (const c of cams) {
+    if (c.kind !== 'video' || !c.stepMs) continue;
+    const want = Math.max(0.1, Math.min(userRate, 1000 / 15 / (c.stepMs + 20)));
+    if (Math.abs(c.video.playbackRate - want) > 0.04) c.video.playbackRate = +want.toFixed(2);
+  }
+}
+
 function stepCams() {
   for (const cam of cams) {
+    const t0 = performance.now();
     const res = cam.step();
     if (!res) continue;
+    cam.stepMs = 0.9 * (cam.stepMs ?? 70) + 0.1 * (performance.now() - t0); // smoothed cost of one processed frame
     if (cam.looped) beginMatch(); // the video clip restarted
     const pd = res.debug?.throw?.pairDist; // how close the two fighters are (when both are tracked): evidence for 'this fall was a throw'
     if (pd != null) {
@@ -853,6 +874,13 @@ function loop(ts) {
     $('#fps').textContent = `${fpsN} fps${cams[0]?.pose ? ' · ' + cams[0].pose.delegate : ''}${cams.length > 1 ? ` · ${cams.length} cameras` : ''}`;
     $('#idinfo').innerHTML = cams[primary] ? identityHtml(cams[primary]) : '';
     for (const c of cams) if (c.badge) c.badge.innerHTML = identityHtml(c);
+    const fpsNow = fpsN;
+    const slow = cams.length && cams.some((c) => c.kind === 'camera') && fpsNow < MIN_FPS;
+    $('#fps').classList.toggle('slowfps', !!slow);
+    if (slow) $('#fps').textContent += ` ⚠ too slow for punches (< ${MIN_FPS} fps): untick 'Find 2nd fighter' / 'Match fighters by clothing colour', or close other tabs`;
+    const vid = cams.find((c) => c.kind === 'video');
+    if (vid) $('#fps').textContent += ` · video at ${vid.video.playbackRate.toFixed(2)}×`;
+    adaptPlayback();
     fpsN = 0;
     fpsT = 0;
     const d = $('#debugOut');
@@ -916,7 +944,7 @@ refreshCameras().then(() => {
 });
 try { navigator.permissions.query({ name: 'camera' }).then((p) => (p.onchange = refreshCameras)); } catch { /* not supported */ }
 $('#fileVideo').onchange = (e) => e.target.files[0] && startVideo(e.target.files[0]);
-$('#rate').onchange = (e) => cams.forEach((c) => c.kind === 'video' && (c.video.playbackRate = Number(e.target.value)));
+$('#rate').onchange = () => adaptPlayback(); // the chosen speed is the ceiling; adaptPlayback lowers it when the computer is too slow
 judgeClient.onChange = updateBackendPill;
 $('#backend').onclick = () => {
   const u = prompt('CLIP backend URL', judgeClient.url);
@@ -945,7 +973,10 @@ function openReport() {
 }
 $('#btnReport').onclick = openReport;
 $('#optSolo').onchange = (e) => (cfg.punch.soloVirtualOpponent = e.target.checked);
-$('#optRecover').onchange = (e) => cams.forEach((c) => c.pose && (c.pose.recover = e.target.checked));
+$('#optRecover').onchange = (e) => {
+  recoverTouched = true;
+  cams.forEach((c) => c.pose && (c.pose.recover = e.target.checked));
+};
 $('#optColour').onchange =(e) => cams.forEach((c) => (c.pipeline.tracker.appearance = e.target.checked));
 for (const b of document.querySelectorAll('#tabs button')) {
   b.onclick = () => {
@@ -957,7 +988,7 @@ for (const b of document.querySelectorAll('#tabs button')) {
 // debug hook for tests: build cameras without hardware, push frames, trigger a strike
 window.__ref = {
   buildReport: () => buildReportHtml({ match, reviews: reviews.filter((r) => (r.at ?? 0) >= match.startedAt) }), replays, toggleReplay,
-  get match() { return match; }, cfg, setSport, judgeClient, coordinator, deduper, Camera, dispatchStrike, onVerdict, onDetections,
+  get match() { return match; }, cfg, setSport, judgeClient, coordinator, deduper, Camera, dispatchStrike, onVerdict, onDetections, stepCams, adaptPlayback,
   get cams() { return cams; }, get lastVerdict() { return lastVerdict; }, get markers() { return markers; },
 };
 requestAnimationFrame(loop);
