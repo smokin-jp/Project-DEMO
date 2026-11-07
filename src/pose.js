@@ -14,6 +14,7 @@ import { bodyOf, whyNot, personBox, Confirmer } from './second.js';
 
 const WORK_W = 640;     // the search runs on a picture this wide (the model shrinks everything further anyway)
 const MASK_PAD = 0.18;  // blank out the first fighter's box plus this much margin
+const NEAR_MS = 700;    // after a find, the next searches start in a box around where the second fighter was (cheap) for this long
 const RETRY_MS = 200;   // after a fruitless search, wait this long before looking again (a lone fighter stays cheap)
 
 export async function createPose(onStatus = () => {}, { recover = true } = {}) {
@@ -46,7 +47,7 @@ export async function createPose(onStatus = () => {}, { recover = true } = {}) {
   // a second, stateless instance for the second-fighter search (single pose, lower confidence bar)
   let finder = null;
   try {
-    finder = await make(delegate, 'IMAGE', 1, 0.25);
+    finder = await make(delegate, 'IMAGE', 2, 0.25); // two poses back: the first fighter again must not hide the second
     finder.detect(c);
   } catch (e) {
     console.warn('second-fighter search unavailable', e);
@@ -56,36 +57,47 @@ export async function createPose(onStatus = () => {}, { recover = true } = {}) {
   const work = document.createElement('canvas');
   const part = document.createElement('canvas');
   let nextTry = 0;
+  let lastSecond = null; // {box, t}: where the second fighter was last found (the next search starts there)
   const confirm = new Confirmer();
   const stats = { frames: 0, native2: 0, one: 0, searched: 0, recovered: 0, noBox: 0, candidates: 0, rejected: {} }; // rejected: why candidates were turned down
 
-  /** the poses of the picture on `work` (full frame) or its left/right part, mapped back to full-frame coordinates */
-  function search(x0, x1, aspect) {
+  /** the poses found in a region of the picture on `work` (default: all of it), mapped back to full-frame coordinates */
+  function search(x0, x1, aspect, y0 = 0, y1 = 1) {
     const W = work.width, H = work.height;
     let src = work;
-    if (x0 > 0 || x1 < 1) {
-      part.width = Math.round((x1 - x0) * W);
-      part.height = H;
-      part.getContext('2d').drawImage(work, x0 * W, 0, part.width, H, 0, 0, part.width, H);
+    if (x0 > 0 || x1 < 1 || y0 > 0 || y1 < 1) {
+      part.width = Math.max(8, Math.round((x1 - x0) * W));
+      part.height = Math.max(8, Math.round((y1 - y0) * H));
+      part.getContext('2d').drawImage(work, x0 * W, y0 * H, part.width, part.height, 0, 0, part.width, part.height);
       src = part;
     }
     const r = finder.detect(src);
     return (r.landmarks || []).map((l, i) => ({
-      lm: l.map((p) => ({ ...p, x: x0 + p.x * (x1 - x0) })),
+      lm: l.map((p) => ({ ...p, x: x0 + p.x * (x1 - x0), y: y0 + p.y * (y1 - y0) })),
       world: r.worldLandmarks?.[i],
     })).map((p) => ({ ...p, body: bodyOf(p.lm, aspect) }));
   }
 
   function findSecond(video, first) {
     const aspect = (video.videoWidth || video.width) / (video.videoHeight || video.height) || 16 / 9;
-    work.width = WORK_W;
-    work.height = Math.max(8, Math.round(WORK_W / aspect));
+    const wh = Math.max(8, Math.round(WORK_W / aspect));
+    if (work.width !== WORK_W || work.height !== wh) { work.width = WORK_W; work.height = wh; } // resizing a canvas clears it: only when needed
     const g = work.getContext('2d');
     g.drawImage(video, 0, 0, work.width, work.height);
     const fb = bodyOf(first.lm, aspect);
     const box = personBox(first.lm, MASK_PAD);
     if (!box) { stats.noBox++; return null; }
     const { x0, x1, y0, y1 } = box;
+    const remember = (hit) => {
+      lastSecond = { box: personBox(hit.lm, 0), t: performance.now() };
+      return hit;
+    };
+    // fast path: the second fighter was seen a moment ago, so look only in a box around that place (one small search instead of up to three)
+    if (lastSecond?.box && performance.now() - lastSecond.t < NEAR_MS) {
+      const b = lastSecond.box, w = b.x1 - b.x0, h = b.y1 - b.y0;
+      const hit = tryNear(Math.max(0, b.x0 - 0.7 * w), Math.min(1, b.x1 + 0.7 * w), Math.max(0, b.y0 - 0.5 * h), Math.min(1, b.y1 + 0.5 * h), aspect, fb);
+      if (hit) return remember(hit);
+    }
     g.fillStyle = 'rgb(127,127,127)';
     g.fillRect(x0 * work.width, y0 * work.height, (x1 - x0) * work.width, (y1 - y0) * work.height);
     // 1) the frame with the first fighter blanked out, as a whole; 2) the plain left and right parts of the frame (a small or
@@ -100,9 +112,23 @@ export async function createPose(onStatus = () => {}, { recover = true } = {}) {
       return null;
     };
     const hit = tryCands(search(0, 1, aspect));
-    if (hit) return hit;
+    if (hit) return remember(hit);
     g.drawImage(video, 0, 0, work.width, work.height); // un-blank the picture
-    return tryCands(search(0, 0.62, aspect)) || tryCands(search(0.38, 1, aspect));
+    const hit2 = tryCands(search(0, 0.62, aspect)) || tryCands(search(0.38, 1, aspect));
+    if (hit2) return remember(hit2);
+    lastSecond = null;
+    return null;
+  }
+
+  /** search a box of the (un-blanked) picture; the first fighter inside it is rejected by the sanity checks ("same body") */
+  function tryNear(x0, x1, y0, y1, aspect, fb) {
+    for (const cand of search(x0, x1, aspect, y0, y1)) {
+      stats.candidates++;
+      const why = whyNot(cand.body, fb);
+      if (!why) return { lm: cand.lm, world: cand.world, body: cand.body };
+      stats.rejected[why] = (stats.rejected[why] || 0) + 1;
+    }
+    return null;
   }
 
   const api = {

@@ -48,6 +48,7 @@ function setSport(id, variant) {
   for (const [k, v] of Object.entries(rules.variants)) sel.add(new Option(v.label, k));
   sel.value = match.variantId;
   markers = [];
+  setRecoverDefault();
   buildManual();
   buildRules();
   renderLog();
@@ -256,8 +257,13 @@ const saveSetup = () => { try { localStorage.setItem(CAM_STORE, JSON.stringify(s
 const clockNow = () => (mode === 'video' && cams[0] ? cams[0].lastMedia : performance.now()); // the clock the frames are stamped with
 
 let recoverTouched = false; // the user ticked / unticked 'Find 2nd fighter' themselves: stop applying the per-source default
-function setRecoverDefault(on) {
-  if (!recoverTouched) $('#optRecover').checked = on;
+// Judo needs both skeletons (throws, falls, the passivity timer) and its slower leg actions tolerate a lower frame rate; boxing and
+// kickboxing punches need 10+ fps, so a live camera there stays fast. Uploaded video always searches (it slows its playback to keep up).
+function setRecoverDefault(srcMode = mode) {
+  if (recoverTouched) return;
+  const on = srcMode === 'video' || sport === 'judo';
+  $('#optRecover').checked = on;
+  cams.forEach((c) => c.pose && (c.pose.recover = on));
 }
 
 async function newPose() {
@@ -406,7 +412,7 @@ async function startCameras() {
       made.push(cam); // so a failure below releases it
       try { await cam.open(setup[i].id); } catch (e) { e.camIndex = i; throw e; }
       if (made.some((o) => o !== cam && o.deviceId && o.deviceId === cam.deviceId)) throw Object.assign(new Error(`CAM ${i + 1} opened the same camera as another row. Pick a different camera.`), { name: 'Duplicate' });
-      setRecoverDefault(false); // live camera: the extra search costs ~100 ms a frame and punches need >= 10 frames a second
+      setRecoverDefault('camera'); // live camera: on for judo, off for boxing / kickboxing (the search costs frame rate, and punches need >= 10 fps)
       cam.pose = await newPose();
     }
     cams = made;
@@ -457,7 +463,7 @@ async function startVideo(file) {
   const cam = new Camera(0, cfg);
   try {
     await cam.openFile(file, Number($('#rate').value));
-    setRecoverDefault(true); // uploaded video: find both fighters; playback slows down by itself to keep up (see adaptPlayback)
+    setRecoverDefault('video'); // uploaded video: find both fighters; playback slows down by itself to keep up (see adaptPlayback)
     cam.pose = await newPose();
     cams = [cam];
     primary = 0;
@@ -733,7 +739,9 @@ function updateBackendPill() {
   }
 }
 
-const MIN_FPS = 12; // below about 10 frames a second the punch detector starts missing punches (tested: 3 of 3 at 12 fps, about 1 of 3 at 8 fps)
+// Frame rate each sport needs (tested on the scripted fights): punches are found 3 of 3 at 12 fps but about 1 of 3 at 8 fps; the Judo
+// throw is found 7 of 8 times at 6 fps (and falls 8 of 8 down to 4 fps).
+const minFps = () => (sport === 'judo' ? 6 : 12);
 
 /** an uploaded video plays in real time, so a slow computer would skip frames; slow the playback down so about 15 video frames a second get analysed */
 function adaptPlayback() {
@@ -875,9 +883,9 @@ function loop(ts) {
     $('#idinfo').innerHTML = cams[primary] ? identityHtml(cams[primary]) : '';
     for (const c of cams) if (c.badge) c.badge.innerHTML = identityHtml(c);
     const fpsNow = fpsN;
-    const slow = cams.length && cams.some((c) => c.kind === 'camera') && fpsNow < MIN_FPS;
+    const slow = cams.length && cams.some((c) => c.kind === 'camera') && fpsNow < minFps();
     $('#fps').classList.toggle('slowfps', !!slow);
-    if (slow) $('#fps').textContent += ` ⚠ too slow for punches (< ${MIN_FPS} fps): untick 'Find 2nd fighter' / 'Match fighters by clothing colour', or close other tabs`;
+    if (slow) $('#fps').textContent += ` ⚠ too slow for ${sport === 'judo' ? 'throws' : 'punches'} (< ${minFps()} fps): untick 'Find 2nd fighter' / 'Match fighters by clothing colour', or close other tabs`;
     const vid = cams.find((c) => c.kind === 'video');
     if (vid) $('#fps').textContent += ` · video at ${vid.video.playbackRate.toFixed(2)}×`;
     adaptPlayback();
