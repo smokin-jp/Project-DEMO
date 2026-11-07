@@ -5,6 +5,8 @@ backend/.venv/
 # python caches
 __pycache__/
 *.pyc
+.env
+.env.*
 .pytest_cache/
 
 # local run output and test scratch files
