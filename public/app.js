@@ -382,6 +382,12 @@ async function startCameras() {
   const made = [];
   try {
     if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('Camera API unavailable. Open http://localhost:5173 in Chrome, Edge, Brave or Firefox (not an embedded viewer).'), { name: 'NoAPI' });
+    await refreshCameras();
+    // camera ids change when the browser resets permissions or restarts: a saved id that no longer exists would fail with OverconstrainedError
+    const known = new Set(devices.map((d) => d.deviceId).filter(Boolean));
+    if (known.size) setup.forEach((r) => { if (r.id && !known.has(r.id)) r.id = ''; });
+    saveSetup();
+    renderCamRows();
     const chosen = setup.map((r) => r.id).filter(Boolean);
     if (new Set(chosen).size !== chosen.length) throw Object.assign(new Error('Two camera rows use the same camera. Pick a different camera for each angle.'), { name: 'Duplicate' });
     const blank = setup.findIndex((r, i) => i > 0 && !r.id);
@@ -426,6 +432,7 @@ async function showCameraHelp(e) {
       ? 'Camera is BLOCKED for this site. Click the padlock / camera icon left of the address bar → set Camera to Allow → reload. (Chrome: chrome://settings/content/camera, remove localhost from "Not allowed".) Edge: edge://settings/content/camera.'
       : 'Permission was dismissed or denied. Reload the page and click Start again, then choose Allow.',
     NotFoundError: 'No camera detected. Plug one in, or check Windows Settings → Privacy & security → Camera → "Let desktop apps access your camera" is ON, and no other app has exclusive use.',
+    OverconstrainedError: 'The camera chosen for that row is no longer available (browsers change camera ids after a restart or permission reset). Pick the camera again in its dropdown, or leave CAM 1 on "System default camera", then press Start.',
     NotReadableError: 'The camera is in use by another app (Teams/Zoom/Camera app) or by another row. Close it and retry.',
     NoAPI: e.message,
     Duplicate: e.message,
