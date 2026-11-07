@@ -33,10 +33,12 @@ export class Camera {
 
   async open(deviceId = '') {
     const base = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
-    const attempts = [
-      deviceId ? { video: { ...base, deviceId: { exact: deviceId } } } : { video: base },
-      deviceId ? { video: { deviceId: { exact: deviceId } } } : { video: true },
-    ];
+    // 1) the chosen camera exactly, 2) the chosen camera exactly with no size wishes, 3) the chosen camera only if it still exists
+    // (a saved id that is gone must not stop the app: the browser then gives the default camera, and the duplicate check in
+    // app.js still catches two rows ending up on the same one)
+    const attempts = deviceId
+      ? [{ video: { ...base, deviceId: { exact: deviceId } } }, { video: { deviceId: { exact: deviceId } } }, { video: { deviceId: { ideal: deviceId } } }]
+      : [{ video: base }, { video: true }];
     let stream, lastErr;
     for (const c of attempts) {
       try {
@@ -51,7 +53,7 @@ export class Camera {
     this.video.srcObject = stream;
     await this.video.play();
     const track = stream.getVideoTracks()[0];
-    this.deviceId = deviceId || track?.getSettings().deviceId || ''; // keep the id the user picked so the dropdown stays on it
+    this.deviceId = track?.getSettings().deviceId || deviceId || ''; // the camera that really opened (differs from the request if the saved id was gone)
     this.label = track?.label || this.id;
     this.aspect = this.video.videoWidth / this.video.videoHeight || 16 / 9;
   }
