@@ -59,7 +59,7 @@ export async function createPose(onStatus = () => {}, { recover = true } = {}) {
   let nextTry = 0;
   let lastSecond = null; // {box, t}: where the second fighter was last found (the next search starts there)
   const confirm = new Confirmer();
-  const stats = { frames: 0, native2: 0, one: 0, searched: 0, recovered: 0, noBox: 0, candidates: 0, rejected: {} }; // rejected: why candidates were turned down
+  const stats = { frames: 0, native2: 0, one: 0, zero: 0, searched: 0, recovered: 0, noBox: 0, candidates: 0, rejected: {} }; // rejected: why candidates were turned down
 
   /** the poses found in a region of the picture on `work` (default: all of it), mapped back to full-frame coordinates */
   function search(x0, x1, aspect, y0 = 0, y1 = 1) {
@@ -120,6 +120,23 @@ export async function createPose(onStatus = () => {}, { recover = true } = {}) {
     return null;
   }
 
+  /** no skeleton at all from the video model: look for up to two people in the whole frame (lower confidence bar) */
+  function findAny(video) {
+    const aspect = (video.videoWidth || video.width) / (video.videoHeight || video.height) || 16 / 9;
+    const wh = Math.max(8, Math.round(WORK_W / aspect));
+    if (work.width !== WORK_W || work.height !== wh) { work.width = WORK_W; work.height = wh; }
+    work.getContext('2d').drawImage(video, 0, 0, work.width, work.height);
+    const ok = [];
+    for (const cand of search(0, 1, aspect)) {
+      stats.candidates++;
+      const why = whyNot(cand.body, null);
+      if (why) stats.rejected[why] = (stats.rejected[why] || 0) + 1;
+      else ok.push(cand);
+    }
+    if (ok.length === 2 && whyNot(ok[1].body, ok[0].body)) ok.pop(); // the pair must look like two different fighters, else keep one
+    return ok.map((c) => ({ lm: c.lm, world: c.world, body: c.body }));
+  }
+
   /** search a box of the (un-blanked) picture; the first fighter inside it is rejected by the sanity checks ("same body") */
   function tryNear(x0, x1, y0, y1, aspect, fb) {
     for (const cand of search(x0, x1, aspect, y0, y1)) {
@@ -144,9 +161,19 @@ export async function createPose(onStatus = () => {}, { recover = true } = {}) {
       stats.frames++;
       if (poses.length >= 2) { stats.native2++; confirm.reset(); return poses; }
       if (poses.length === 1) stats.one++;
-      if (!api.recover || !finder || poses.length !== 1) return poses;
+      if (!api.recover || !finder || poses.length > 1) return poses;
       const now = performance.now();
       if (now < nextTry) return poses;
+      if (poses.length === 0) {
+        stats.zero++;
+        stats.searched++;
+        let any = [];
+        try { any = findAny(video); } catch (e) { console.warn('skeleton search failed', e); }
+        if (!any.length) { nextTry = now + RETRY_MS; confirm.reset(); return poses; }
+        if (!confirm.see(now, any[0].body)) return poses; // seen twice in the same place before it is believed
+        stats.recovered += any.length;
+        return any.map((c) => ({ lm: c.lm, world: c.world }));
+      }
       stats.searched++;
       let found = null;
       try { found = findSecond(video, poses[0]); } catch (e) { console.warn('second-fighter search failed', e); }

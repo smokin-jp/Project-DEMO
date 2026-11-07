@@ -463,6 +463,8 @@ async function startVideo(file) {
   const cam = new Camera(0, cfg);
   try {
     await cam.openFile(file, Number($('#rate').value));
+    cam.stepMs = 170; // assume a slow start: the playback speed adapts from here instead of skipping the first seconds
+    cam.video.playbackRate = Math.min(Number($('#rate').value) || 1, 0.4);
     setRecoverDefault('video'); // uploaded video: find both fighters; playback slows down by itself to keep up (see adaptPlayback)
     cam.pose = await newPose();
     cams = [cam];
@@ -483,6 +485,8 @@ async function startVideo(file) {
 /* ------------------------------------------------------------------- frames */
 
 const COL = { a: '#ff4757', b: '#3b82f6' };
+// counters shown in the HUD so it is visible where a punch stops: seen by the detector -> sent to the judge -> judged -> scored
+const diag = { thrown: 0, solo: 0, judged: 0, scored: 0, both: 0, one: 0, none: 0 };
 
 function onDetections(cam, res) {
   const backend = judgeClient.online;
@@ -492,6 +496,15 @@ function onDetections(cam, res) {
     if (e.type === 'punch_thrown' || e.type === 'kick_thrown') {
       if (!backend) continue; // offline: the geometry events below are used instead
       const hint = res.events.find((x) => /_(landed|missed)$/.test(x.type) && x.by === e.by && x.hand === e.hand && (x.strike || 'punch') === (e.strike || 'punch'));
+      diag.thrown++;
+      // Only one fighter is visible: the backend can only answer "no opponent in frame", so with 'Solo / shadow-box' ticked the punch is
+      // scored against an imaginary opponent, as that option promises (judo never does: a hand moving in judo is mostly grip fighting)
+      if (e.type === 'punch_thrown' && hint?.virtual && $('#optSolo').checked && sport !== 'judo') {
+        diag.solo++;
+        markers.push({ cam: cam.id, t0: performance.now(), x: e.at.x / cam.aspect, y: e.at.y, text: 'SOLO ' + hint.target.toUpperCase(), color: COL[e.by] });
+        match.handle({ ...hint, auto: true, clock: now });
+        continue;
+      }
       const { cluster, created } = coordinator.add(cam.id, e, now, hint || null);
       if (created) {
         cluster.marker = { cam: cam.id, t0: performance.now(), x: e.at.x / cam.aspect, y: e.at.y, text: 'judging…', color: '#9aa4b2', hold: true };
@@ -578,6 +591,8 @@ function onVerdict(e, evidence, v, mk, replay) {
   mk.text = notStrike ? 'NOT A KICK' : v.foul ? 'FOUL' : v.scored ? 'SCORES' : v.review ? 'REVIEW' : v.contact.value ? `NO SCORE: ${String(cls).toUpperCase()}` : 'MISS';
   mk.color = notStrike ? '#9aa4b2' : v.foul ? '#fb923c' : v.scored ? '#34d399' : v.review ? '#fbbf24' : '#9aa4b2';
   lastVerdict = { v, e, evidence };
+  diag.judged++;
+  if (v.scored) diag.scored++;
   addReview(e, v, replay);
   match.handle({ type: 'strike_verdict', by: e.by, against: v.intended_target.value ?? (e.by === 'a' ? 'b' : 'a'), verdict: v, auto: true, clock: e.peakT });
 }
@@ -758,6 +773,7 @@ function stepCams() {
     const t0 = performance.now();
     const res = cam.step();
     if (!res) continue;
+    if (cam === cams[primary]) diag[res.people.a && res.people.b ? 'both' : res.people.a || res.people.b ? 'one' : 'none']++;
     cam.stepMs = 0.9 * (cam.stepMs ?? 70) + 0.1 * (performance.now() - t0); // smoothed cost of one processed frame
     if (cam.looped) beginMatch(); // the video clip restarted
     const pd = res.debug?.throw?.pairDist; // how close the two fighters are (when both are tracked): evidence for 'this fall was a throw'
@@ -880,7 +896,10 @@ function loop(ts) {
   fpsT += dt;
   if (fpsT > 1000) {
     $('#fps').textContent = `${fpsN} fps${cams[0]?.pose ? ' · ' + cams[0].pose.delegate : ''}${cams.length > 1 ? ` · ${cams.length} cameras` : ''}`;
-    $('#idinfo').innerHTML = cams[primary] ? identityHtml(cams[primary]) : '';
+    const seen = diag.both + diag.one + diag.none;
+    const people = seen ? `both fighters in ${Math.round((100 * diag.both) / seen)}% of frames · one ${Math.round((100 * diag.one) / seen)}% · none ${Math.round((100 * diag.none) / seen)}%` : '';
+    $('#idinfo').innerHTML = cams[primary] ? `${identityHtml(cams[primary])}<br>${people}<br>strikes seen ${diag.thrown} · scored vs imaginary opponent ${diag.solo} · judged ${diag.judged} · scored ${diag.scored}` : '';
+    if (seen > 300) { diag.both = Math.round(diag.both / 2); diag.one = Math.round(diag.one / 2); diag.none = Math.round(diag.none / 2); } // recent frames count more
     for (const c of cams) if (c.badge) c.badge.innerHTML = identityHtml(c);
     const fpsNow = fpsN;
     const slow = cams.length && cams.some((c) => c.kind === 'camera') && fpsNow < minFps();

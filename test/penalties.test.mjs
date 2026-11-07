@@ -35,7 +35,6 @@ const AUTO = [
   ['judo', 'demo', 'leg_grab', (m) => m.handle({ type: 'leg_grab', by: 'a', auto: true })],
   ['kickboxing', 'unified', 'headbutt', (m) => m.handle({ type: 'headbutt', by: 'a', auto: true })],
   ['kickboxing', 'unified', 'leg_hold', (m) => m.handle({ type: 'leg_hold', by: 'a', auto: true })],
-  ['judo', 'demo', 'strike', (m) => m.handle(sv(verdict()))],
   ['judo', 'demo', 'kicking', (m) => { m.handle(sv(kick())); m.tick(3100); }], // waits to see whether the opponent goes down (a throw)
   ['judo', 'demo', 'passivity', (m) => { for (let i = 0; i < 64; i++) { m.handle({ type: 'tracking', auto: true }); m.tick(500); } }],
   ['kickboxing', 'unified', 'low_blow', (m) => m.handle(sv(verdict({ scored: false, foul: 'low_blow' })))],
@@ -64,7 +63,7 @@ test('the penalties NOT in that list really are manual-only (no detection can pr
   const manual = {};
   for (const [sport, rules] of Object.entries(RULESETS)) manual[sport] = Object.keys(rules.fouls).filter((f) => !autoIds(sport).has(f));
   assert.deepEqual(manual.boxing.sort(), ['flagrant', 'mouthguard', 'unsportsmanlike']);
-  assert.deepEqual(manual.judo.sort(), ['dangerous_throw', 'defensive', 'disregard', 'false_attack', 'illegal_grip', 'stepping_out']);
+  assert.deepEqual(manual.judo.sort(), ['dangerous_throw', 'defensive', 'disregard', 'false_attack', 'illegal_grip', 'stepping_out', 'strike']);
   assert.deepEqual(manual.kickboxing.sort(), ['abusive', 'delay', 'disobey', 'flagrant', 'ropes', 'throat', 'thumbing', 'timidity', 'unsportsmanlike']);
   // ...and each of them still works when the referee issues it by hand
   for (const [sport, ids] of Object.entries(manual)) {

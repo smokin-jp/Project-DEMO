@@ -16,12 +16,14 @@ export function bodyOf(lm, aspect) {
 
 const touching = (a, b, margin) => !!a && !!b && a.x0 - margin < b.x1 && b.x0 - margin < a.x1 && a.y0 - margin < b.y1 && b.y0 - margin < a.y1;
 
-/** why `cand` is NOT a believable second fighter next to `first` (both from bodyOf, same aspect), or null if it is */
+/** why `cand` is NOT a believable second fighter next to `first` (both from bodyOf, same aspect), or null if it is.
+ *  Without `first` only the checks a body must pass on its own are made. */
 export function whyNot(cand, first) {
   const { P, torso, hip } = cand;
   if (torso < 0.04) return 'too small';
   const core = [11, 12, 23, 24];
   if (core.reduce((s, i) => s + P[i].v, 0) / 4 < 0.6) return 'weak joints'; // shoulders and hips must be well supported
+  if (!first) return [25, 26].filter((i) => P[i].v > 0.4).length < 1 ? 'no knee' : core.some((i) => P[i].y < 0 || P[i].y > 1) ? 'off frame' : null; // nobody to compare with
   const ratio = torso / first.torso;
   if (ratio < 0.5 || ratio > 2) return 'size'; // roughly the same size as the first fighter
   const d = Math.hypot(hip.x - first.hip.x, hip.y - first.hip.y);

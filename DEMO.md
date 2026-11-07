@@ -41,5 +41,5 @@
 
 - Tuned and tested on **synthetic** data and simulated cameras. Real-world accuracy is not yet measured; thresholds are adjustable in the **Tuning** tab.
 - CLIP is used **zero-shot** (uncalibrated confidences); glove-part and some fouls are low-confidence evidence.
-- Detected automatically: 11 of 14 boxing penalties, 13 of 22 kickboxing, 4 of 10 judo (headbutt, leg grab / hold and ducking low are pose-geometry guesses: say so, and show Undo). The rest are referee-override.
+- Detected automatically: 11 of 14 boxing penalties, 13 of 22 kickboxing, 3 of 10 judo (headbutt, leg grab / hold and ducking low are pose-geometry guesses: say so, and show Undo). The rest are referee-override.
 - Colour-based identity needs clearly different clothing; otherwise it falls back to position.

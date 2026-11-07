@@ -130,8 +130,12 @@ test('same throw in boxing = wrestling foul', () => {
   assert.equal(m.sides.a.punchesTotal, 0);
 });
 
-test('a punch in judo is a direct disqualification (hansoku-make)', () => {
+test('a punch in judo is only FLAGGED (grip fighting looks like punching): no automatic hansoku-make, the referee decides', () => {
   const m = officiate('judo', 'boxing');
+  assert.equal(m.status, 'running');
+  assert.equal(m.sides.a.penalties.length, 0);
+  assert.ok(m.log.some((l) => /Possible strike by RED/.test(l.text) && l.auto), 'flagged for the referee');
+  m.handle({ type: 'foul', by: 'a', foul: 'strike' }); // the referee confirms from the override panel
   assert.equal(m.method, 'HANSOKU-MAKE');
   assert.equal(m.winner, 'b');
 });
@@ -286,18 +290,24 @@ test('kickboxing: backend verdicts behave like boxing (score, foul, review)', ()
   assert.match(m.log[0].text, /REVIEW/);
 });
 
-test('judo: a punch that connects is a disqualification, a miss is not', () => {
-  for (const [sport, method] of [['judo', 'HANSOKU-MAKE']]) {
-    const miss = new Match(RULESETS[sport], 'demo');
-    miss.start();
-    miss.handle(pv(verdict({ contact: crit(false), genuine_punch: crit(false, 0.9, { classification: 'miss' }), scored: false })));
-    assert.equal(miss.status, 'running', sport);
-    const hit = new Match(RULESETS[sport], 'demo');
-    hit.start();
-    hit.handle(pv(verdict()));
-    assert.equal(hit.method, method, sport);
-    assert.equal(hit.winner, 'b', sport);
+test('judo: a punch verdict (even a clean contact, a push or a low blow) never ends the bout by itself; a miss is not even flagged', () => {
+  const miss = new Match(RULESETS.judo, 'demo');
+  miss.start();
+  miss.handle(pv(verdict({ contact: crit(false), genuine_punch: crit(false, 0.9, { classification: 'miss' }), scored: false })));
+  assert.equal(miss.status, 'running');
+  assert.equal(miss.log.filter((l) => /Possible strike/.test(l.text)).length, 0);
+  for (const v of [verdict(), verdict({ foul: 'low_blow', scored: false }), verdict({ genuine_punch: crit(false, 0.7, { classification: 'push' }), scored: false })]) {
+    const m = new Match(RULESETS.judo, 'demo');
+    m.start();
+    m.handle(pv(v));
+    assert.equal(m.status, 'running');
+    assert.equal(m.sides.a.penalties.length, 0);
+    assert.equal(m.log.filter((l) => /Possible strike by RED/.test(l.text)).length, 1);
   }
+  const off = new Match(RULESETS.judo, 'demo'); // backend offline: the geometry candidate is flagged the same way
+  off.start();
+  off.handle({ type: 'strike_landed', by: 'a', against: 'b', target: 'head', auto: true });
+  assert.equal(off.status, 'running');
 });
 
 /* ---------------- kicks and knees: DQ in boxing / judo, points in kickboxing ---------------- */

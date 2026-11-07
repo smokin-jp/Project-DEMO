@@ -14,7 +14,7 @@ const fouls = {
   illegal_grip: { label: 'Illegal grip / grips below the inner thigh', desc: 'Pistol grip, clasped hands (bear hug) and negative grips below the inner thigh.' },
   leg_grab: { label: 'Gripping / blocking legs below the belt', auto: true, desc: 'Hooking, blocking or gripping below the inner-thigh level. AI call from pose geometry (a hand kept on the opponent\'s leg for 0.7 s): check it.' },
   defensive: { label: 'Excessively defensive posture', desc: 'Bent over / blocking without attacking.' },
-  strike: { label: 'Striking the opponent', auto: true, direct: 'hm', desc: 'Hitting with fist or elbow is a serious infringement: hansoku-make.' },
+  strike: { label: 'Striking the opponent', direct: 'hm', desc: 'Hitting with fist or elbow is a serious infringement: hansoku-make. Referee call only: the AI flags a possible strike but never disqualifies on its own (grip fighting looks like punching to a camera).' },
   kicking: { label: 'Kicking / kneeing the opponent', auto: true, direct: 'hm', desc: 'Kicks and knee strikes are prohibited: hansoku-make.' },
   dangerous_throw: { label: 'Dangerous technique (e.g. kawazu-gake, high-risk kansetsu throw)', direct: 'hm', desc: 'Direct hansoku-make.' },
   disregard: { label: 'Disregarding referee / unsportsmanlike', direct: 'hm', desc: 'Direct hansoku-make.' },
@@ -109,8 +109,8 @@ export default {
         else if (ev.kind === 'hold_ippon') this.award(m, ev.by, 'ippon', 'Osaekomi', false);
         else this.award(m, ev.by, ev.kind, 'Manual', false);
         break;
-      case 'strike_landed':
-        if (m.status === 'running') m.penalize(ev.by, 'strike', ev);
+      case 'strike_landed': // backend offline: geometry-only candidate
+        this.possibleStrike(m, ev, 'a hand moving fast towards the opponent');
         break;
       case 'down': // a fall: a leg action that ends with the opponent on the mat is a throw attempt, not a kick
         m.fallAt[ev.by] = m.now;
@@ -121,8 +121,8 @@ export default {
           // a kick / knee the backend confirms is real AND that touched the opponent somewhere a sweep or reap would not
           if (v.strike_check?.value && v.contact.value && !SWEEP_ZONES.has(v.contact_location.value)) this.kickCall(m, ev);
           else if (v.strike_check?.value && v.contact.value) m.say(`Leg action on the opponent's legs (${v.contact_location.value.replace('_', ' ')}): a foot sweep / reap, not a kick`, { kind: 'info', side: ev.by, auto: true });
-        } else if (m.status === 'running' && v.contact.value && v.genuine_punch.detail.classification !== 'miss') {
-          m.penalize(ev.by, 'strike', ev); // a punch that actually connects
+        } else if (v.contact.value && v.genuine_punch.detail.classification !== 'miss') {
+          this.possibleStrike(m, ev, `the video judge saw contact (${v.genuine_punch.detail.classification})`);
         }
         break;
       }
@@ -137,6 +137,16 @@ export default {
         break;
       default:
     }
+  },
+
+  /**
+   * A hand moving fast at the opponent. In judo that is almost always grip fighting, a push or a throw entry, and a camera cannot
+   * tell it from a punch: a wrong automatic call here ends the bout (hansoku-make), which tested far too often on real throw clips.
+   * So the AI only FLAGS it; the referee issues the hansoku-make from the override panel if it really was a strike.
+   */
+  possibleStrike(m, ev, why) {
+    if (m.status !== 'running') return;
+    m.say(`Possible strike by ${m.sides[ev.by].name} (${why}): check the replay. Not penalised; use the override panel if it was a real strike`, { kind: 'info', side: ev.by, auto: true, evidence: ev });
   },
 
   /**
